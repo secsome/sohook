@@ -140,4 +140,5 @@ size_t static_fva_to_va(size_t fva)
     }
 
     static_assert(false, "sohook: failed to convert file va to real va\n");
+    return 0;
 }
