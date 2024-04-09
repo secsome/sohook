@@ -4,7 +4,7 @@ CFLAGS = -Wall -Wextra
 TARGET_DEBUG = sohookd
 TARGET_RELEASE = sohook
 
-SRCS = launcher.c hookdata.c elfhelper.c utils.c dynamic.c static.c
+SRCS = launcher.c hookdata.c elfhelper.c utils.c dynamic.c static.c vector.c
 OBJS = $(SRCS:.c=.o)
 DBGOBJS = $(SRCS:.c=.od)
 

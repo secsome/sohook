@@ -1,18 +1,9 @@
-#include <stddef.h>
+#include "sohook.h"
 
-struct hookdecl_t
-{
-    void* address;
-    size_t length;
-    const char* function;
-};
+#include <stdio.h>
 
-int MY_FUNCTION(int a, int b);
-__attribute__((section(".sohook"))) struct hookdecl_t hookdecls[] = {
-    { MY_FUNCTION, 5, "MY_FUNCTION" }
-};
-int MY_FUNCTION(int a, int b)
+DEFINE_HOOK(0x1189, dummy, 0xC)
 {
-    return a + b;
+    printf("I'm a dummy hook\n");
+    return 0x120F;
 }
-

@@ -81,13 +81,6 @@ void hookdata_load_elf(const char *filename)
 {
     hookdata_clear();
     
-    FILE* file = fopen(filename, "rb");
-    if (!file)
-    {
-        fprintf(stderr, "sohook: Failed to open ELF file %s\n", filename);
-        return;
-    }
-
     struct elf_context elf = {0};
     utils_assert(elf_init(&elf, filename), "sohook: Failed to initialize ELF context\n");
 

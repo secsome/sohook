@@ -143,3 +143,8 @@ struct elf_section_data elf_read_section_data(struct elf_context* ctx, const cha
 
     return result;
 }
+
+void elf_read_section_name(struct elf_context* ctx, Elf64_Addr offset, char* buffer)
+{
+    elf_read_section_string(ctx, buffer, offset);
+}

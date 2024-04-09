@@ -115,9 +115,9 @@ static void prepare_process(struct sohook_options const* options)
         waitpid(pid, &status, 0);
         
         if (options->dynamic)
-            dynamic_main(pid);
+            dynamic_main(pid, options->executable);
         else
-            static_main(pid);
+            static_main(pid, options->executable);
     }
     else
         utils_assert(false, "sohook: failed to fork\n");

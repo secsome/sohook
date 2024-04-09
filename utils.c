@@ -48,3 +48,22 @@ char* utils_strdup(const char* str)
     strcpy(new_str, str);
     return new_str;
 }
+
+void utils_dump_pid_maps(pid_t pid)
+{
+    char maps_filepath[64];
+    sprintf(maps_filepath, "/proc/%d/maps", pid);
+
+    FILE* maps_file = fopen(maps_filepath, "r");
+    if (!maps_file)
+    {
+        fprintf(stderr, "sohook: Failed to open %s\n", maps_filepath);
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), maps_file))
+        printf("%s", line);
+
+    fclose(maps_file);
+}
