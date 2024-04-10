@@ -7,7 +7,5 @@
 
 int main()
 {
-    int shmid = shmget(0x486795ab, 0x1000, IPC_CREAT | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-    void* ptr = shmat(shmid, NULL, 0);
-    shmctl(shmid, IPC_RMID, NULL);
+    mmap(0x0, 0x1000, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 }

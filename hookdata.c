@@ -7,8 +7,9 @@
 #include <string.h>
 
 size_t hookdata_count;
-size_t hookdata_capacity;
+static size_t hookdata_capacity;
 struct hookdata* hookdata_list;
+static bool hookdata_sorted;
 
 static int hookdata_sort_compare(const void* a, const void* b)
 {
@@ -22,10 +23,14 @@ void hookdata_verify()
     utils_assert(hookdata_list, "sohook: Hook data list is not initialized\n");
     utils_assert(hookdata_count > 0, "sohook: Hook data list is empty\n");
     
-    qsort(hookdata_list, hookdata_count, sizeof(struct hookdata), hookdata_sort_compare);
+    if (!hookdata_sorted)
+        qsort(hookdata_list, hookdata_count, sizeof(struct hookdata), hookdata_sort_compare);
 
     for (size_t i = 1; i < hookdata_count; ++i)
         utils_assert(hookdata_list[i - 1].address != hookdata_list[i].address, "sohook: Duplicate hook data address\n");
+    
+    for (size_t i = 0; i < hookdata_count; ++i)
+        utils_assert(hookdata_list[i].function_address != (size_t)-1, "sohook: Function address for %s is not resolved\n", hookdata_list[i].function);
 }
 
 void hookdata_clear()
@@ -58,7 +63,23 @@ void hookdata_add(void* address, const char* function, size_t length)
     hookdata_list[hookdata_count].address = address;
     hookdata_list[hookdata_count].length = length;
     hookdata_list[hookdata_count].function = utils_strdup(function);
+    hookdata_list[hookdata_count].function_address = (size_t)-1;
     ++hookdata_count;
+
+    hookdata_sorted = false;
+}
+
+struct hookdata* hookdata_find(void* address)
+{
+    if (hookdata_list == NULL || hookdata_count == 0)
+        return NULL;
+
+    if (!hookdata_sorted)
+        qsort(hookdata_list, hookdata_count, sizeof(struct hookdata), hookdata_sort_compare);
+
+    struct hookdata hd = {0};
+    hd.address = address;
+    return bsearch(&hd, hookdata_list, hookdata_count, sizeof(struct hookdata), hookdata_sort_compare);
 }
 
 void hookdata_load_inj(const char *filename)
@@ -105,12 +126,12 @@ void hookdata_load_elf(const char *filename)
 
     // Get section .sohook
     struct elf_section_data data = elf_read_section_data(&elf, ".sohook");
-    utils_assert(data.size > 0 && data.size % sizeof(struct hookdata) == 0, "sohook: Invalid .sohook section\n");
+    utils_assert(data.size > 0 && data.size % sizeof(struct hookdecl_t) == 0, "sohook: Invalid .sohook section\n");
 
-    size_t item_count = data.size / sizeof(struct hookdata);
+    size_t item_count = data.size / sizeof(struct hookdecl_t);
     for (size_t i = 0; i < item_count; ++i)
     {
-        const struct hookdata* item = (struct hookdata*)data.data + i;
+        const struct hookdecl_t* item = (struct hookdecl_t*)data.data + i;
         void* address = item->address;
         size_t length = item->length;
         char function[1024];
@@ -119,4 +140,29 @@ void hookdata_load_elf(const char *filename)
     }
 
     elf_destroy(&elf);
+}
+
+void hookdata_convert_address(struct hookdata* data, struct elf_context* elf)
+{
+    // Find printf and exit from the symbol table
+    struct elf_section_data symtab = elf_read_section_data(elf, ".symtab");
+    size_t sym_count = symtab.size / sizeof(Elf64_Sym);
+    for (size_t i = 0; i < sym_count; ++i)
+    {
+        const Elf64_Sym* sym = (Elf64_Sym*)symtab.data + i;
+        char sym_name[256] = {0};
+        elf_read_symbol_string(elf, sym->st_name, sym_name);
+        
+        if (!strcmp(sym_name, data->function))
+        {
+            data->function_address = sym->st_value;
+            return;
+        }
+    }
+}
+
+void hookdata_convert_addresses(struct elf_context* elf)
+{
+    for (size_t i = 0; i < hookdata_count; ++i)
+        hookdata_convert_address(hookdata_list + i, elf);
 }

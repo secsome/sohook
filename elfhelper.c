@@ -12,13 +12,13 @@ static void elf_read_section_string(struct elf_context* ctx, char* buffer, Elf64
     fseek(ctx->file, current_off, SEEK_SET);
 }
 
-// static void elf_read_string(struct elf_context* ctx, char* buffer, Elf64_Word off)
-// {
-//     long current_off = ftell(ctx->file);
-//     fseek(ctx->file, ctx->sh_strtab_header.sh_offset + off, SEEK_SET);
-//     utils_assert(fscanf(ctx->file, "%255s", buffer) > 0, "sohook: Failed to read string\n");
-//     fseek(ctx->file, current_off, SEEK_SET);
-// }
+static void elf_read_string(struct elf_context* ctx, char* buffer, Elf64_Word off)
+{
+    long current_off = ftell(ctx->file);
+    fseek(ctx->file, ctx->sh_strtab_header.sh_offset + off, SEEK_SET);
+    utils_assert(fscanf(ctx->file, "%255s", buffer) > 0, "sohook: Failed to read string\n");
+    fseek(ctx->file, current_off, SEEK_SET);
+}
 
 static bool elf_read_section(struct elf_context* ctx, const char* name, Elf64_Shdr* section)
 {
@@ -147,4 +147,9 @@ struct elf_section_data elf_read_section_data(struct elf_context* ctx, const cha
 void elf_read_section_name(struct elf_context* ctx, Elf64_Addr offset, char* buffer)
 {
     elf_read_section_string(ctx, buffer, offset);
+}
+
+void elf_read_symbol_string(struct elf_context* ctx, Elf64_Word off, char* buffer)
+{
+    elf_read_string(ctx, buffer, off);
 }

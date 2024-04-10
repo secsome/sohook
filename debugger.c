@@ -17,23 +17,8 @@
 #include <sys/shm.h>
 #include <sys/uio.h>
 #include <sys/user.h>
+#include <sys/mman.h>
 #include <fcntl.h>
-
-enum
-{
-    R15, R14, R13, R12,
-    RBP, RBX, R11, R10,
-    R9, R8, RAX, RCX,
-    RDX, RSI, RDI, ORIG_RAX,
-    RIP, CS, EFLAGS, RSP,
-    SS, FS_BASE, GS_BASE, DS,
-    ES, FS, GS,
-    REGS_CNT,
-};
-
-static size_t debugger_convert_exe_va(struct debugger_context* ctx, size_t va);
-static size_t debugger_convert_lib_va(struct debugger_context* ctx, size_t va);
-static void debugger_init_va_mappings(struct debugger_context* ctx, const char* module, struct vector_t* va_mappings, struct elf_context* elf);
 
 void debugger_init(struct debugger_context* ctx, const char* executable, const char* library)
 {
@@ -81,21 +66,20 @@ void debugger_init(struct debugger_context* ctx, const char* executable, const c
     // Now the library is loaded, initialize its va mappings
     debugger_init_va_mappings(ctx, library, &ctx->va_mappings_lib, &ctx->elf_lib);
 
-    // Initialize the share memory for jump
-    ctx->shmid = shmget(0x987254ab, 0x1000, IPC_CREAT | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-    ctx->shmptr = shmat(ctx->shmid, NULL, 0);
+    // Now get all the real va of the functions
+    hookdata_convert_addresses(&ctx->elf_lib);
+    hookdata_verify();
 
     unsigned char shellcode[] = 
     {
-        72, 199, 192, 29, 0, 0, 0, 72, 
-        191, 171, 84, 114, 152, 0, 0, 0, 
-        0, 72, 199, 198, 0, 16, 0, 0, 72, 
-        199, 194, 182, 3, 0, 0, 15, 5, 72, 
-        137, 199, 72, 199, 192, 30, 0, 0,
-        0, 72, 49, 246, 72, 49, 210, 15, 
-        5, 205, 3
+        0x48, 0xc7, 0xc0, 0x09, 0x00, 0x00, 0x00, 0x48, 
+        0xc7, 0xc7, 0x00, 0x00, 0x00, 0x00, 0x48, 0xc7, 
+        0xc6, 0x00, 0x10, 0x00, 0x00, 0x48, 0xc7, 0xc2, 
+        0x07, 0x00, 0x00, 0x00, 0x49, 0xc7, 0xc2, 0x22, 
+        0x00, 0x00, 0x00, 0x49, 0xc7, 0xc0, 0xff, 0xff, 
+        0xff, 0xff, 0x49, 0xc7, 0xc1, 0x00, 0x00, 0x00, 
+        0x00, 0x0f, 0x05, 0xcc,
     };
-
     unsigned char original_entrypoint[sizeof(shellcode)];
     debugger_assert(ctx, debugger_read_memory(ctx, ctx->entrypoint, original_entrypoint, sizeof(shellcode)), "sohook: failed to read entrypoint\n");
 
@@ -104,7 +88,7 @@ void debugger_init(struct debugger_context* ctx, const char* executable, const c
 
     // Run the shellcode
     debugger_continue(ctx);
-    ctx->target_shmptr = (void*)debugger_read_register(ctx, RAX);
+    ctx->shellcode_buffer = (void*)debugger_read_register(ctx, RAX);
     
     // Restore the original entrypoint and run it
     debugger_assert(ctx, debugger_write_memory(ctx, ctx->entrypoint, original_entrypoint, sizeof(shellcode)), "sohook: failed to restore entrypoint\n");
@@ -148,6 +132,36 @@ void debugger_assert(struct debugger_context* ctx, bool result, const char* form
     }
 }
 
+void debugger_add_breakpoint(struct debugger_context* ctx, size_t address)
+{
+    struct breakpoint_t bp = {0};
+    bp.address = address;
+    vector_emplace(&ctx->breakpoints, &bp);
+
+    ctx->breakpoints_sorted = false;
+}
+
+static int debugger_breakpoint_sort_compare(const void* a, const void* b)
+{
+    const struct breakpoint_t* item_a = (const struct breakpoint_t*)a;
+    const struct breakpoint_t* item_b = (const struct breakpoint_t*)b;
+    return (item_a->address > item_b->address) - (item_a->address < item_b->address);
+}
+
+struct breakpoint_t* debugger_find_breakpoint(struct debugger_context* ctx, size_t address)
+{
+    const size_t bp_count = vector_size(&ctx->breakpoints);
+    if (bp_count == 0)
+        return NULL;
+
+    if (!ctx->breakpoints_sorted)
+        qsort(ctx->breakpoints.begin, bp_count, sizeof(struct breakpoint_t), debugger_breakpoint_sort_compare);
+
+    struct breakpoint_t bp = {0};
+    bp.address = address;
+    return (struct breakpoint_t*)bsearch(&bp, ctx->breakpoints.begin, bp_count, sizeof(struct breakpoint_t), debugger_breakpoint_sort_compare);
+}
+
 void debugger_enable_breakpoint(struct debugger_context* ctx, struct breakpoint_t* bp)
 {
     if (bp->enabled)
@@ -168,10 +182,25 @@ void debugger_disable_breakpoint(struct debugger_context* ctx, struct breakpoint
     bp->enabled = false;
 }
 
-void debugger_continue(struct debugger_context* ctx)
+void debugger_disable_breakpoint_ex(struct debugger_context* ctx, struct breakpoint_t* bp, unsigned char opcode)
+{
+    if (!bp->enabled)
+        return;
+
+    debugger_assert(ctx, debugger_write_memory(ctx, bp->address, &opcode, 1), "sohook: failed to restore to %x\n", opcode);
+    bp->enabled = false;
+}
+
+int debugger_continue(struct debugger_context* ctx)
 {
     ptrace(PTRACE_CONT, ctx->pid, NULL, NULL);
-    debugger_wait(ctx);
+    return debugger_wait(ctx);
+}
+
+int debugger_singlestep(struct debugger_context* ctx)
+{
+    ptrace(PTRACE_SINGLESTEP, ctx->pid, NULL, NULL);
+    return debugger_wait(ctx);
 }
 
 int debugger_wait(struct debugger_context* ctx)
@@ -247,7 +276,19 @@ void debugger_write_register(struct debugger_context* ctx, size_t reg, size_t va
     ptrace(PTRACE_SETREGS, ctx->pid, NULL, &regs);
 }
 
-static size_t debugger_convert_exe_va(struct debugger_context* ctx, size_t va)
+struct user_regs_struct debugger_read_registers(struct debugger_context* ctx)
+{
+    struct user_regs_struct regs;
+    ptrace(PTRACE_GETREGS, ctx->pid, NULL, &regs);
+    return regs;
+}
+
+void debugger_write_registers(struct debugger_context* ctx, const struct user_regs_struct* regs)
+{
+    ptrace(PTRACE_SETREGS, ctx->pid, NULL, regs);
+}
+
+size_t debugger_convert_exe_va(struct debugger_context* ctx, size_t va)
 {
     for (size_t i = 0; i < vector_size(&ctx->va_mappings_exe); ++i)
     {
@@ -260,7 +301,7 @@ static size_t debugger_convert_exe_va(struct debugger_context* ctx, size_t va)
     return 0;
 }
 
-static size_t debugger_convert_lib_va(struct debugger_context* ctx, size_t va)
+size_t debugger_convert_lib_va(struct debugger_context* ctx, size_t va)
 {
     for (size_t i = 0; i < vector_size(&ctx->va_mappings_lib); ++i)
     {
@@ -273,7 +314,33 @@ static size_t debugger_convert_lib_va(struct debugger_context* ctx, size_t va)
     return 0;
 }
 
-static void debugger_init_va_mappings(struct debugger_context* ctx, const char* module, struct vector_t* va_mappings, struct elf_context* elf)
+size_t debugger_restore_exe_va(struct debugger_context* ctx, size_t va)
+{
+    for (size_t i = 0; i < vector_size(&ctx->va_mappings_exe); ++i)
+    {
+        struct va_mapping_t* mapping = vector_at(&ctx->va_mappings_exe, i);
+        if (va >= (size_t)mapping->real_start && va < (size_t)mapping->real_end)
+            return mapping->elf_start + va - (size_t)mapping->real_start;
+    }
+
+    debugger_assert(ctx, false, "sohook: failed to restore exe va %p\n", va);
+    return 0;
+}
+
+size_t debugger_restore_lib_va(struct debugger_context* ctx, size_t va)
+{
+    for (size_t i = 0; i < vector_size(&ctx->va_mappings_lib); ++i)
+    {
+        struct va_mapping_t* mapping = vector_at(&ctx->va_mappings_lib, i);
+        if (va >= (size_t)mapping->real_start && va < (size_t)mapping->real_end)
+            return mapping->elf_start + va - (size_t)mapping->real_start;
+    }
+
+    debugger_assert(ctx, false, "sohook: failed to restore lib va %p\n", va);
+    return 0;
+}
+
+void debugger_init_va_mappings(struct debugger_context* ctx, const char* module, struct vector_t* va_mappings, struct elf_context* elf)
 {
     char maps_path[PATH_MAX + 1] = {0};
     snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", ctx->pid);

@@ -2,8 +2,10 @@
 
 #include <stdio.h>
 
-DEFINE_HOOK(0x1189, dummy, 0xC)
+DEFINE_HOOK(0x11DD, dummy, 0x2)
 {
-    printf("I'm a dummy hook\n");
-    return 0x120F;
+    printf("Hooked!\n");
+    printf("%llu %llu\n", R->rax, R->rdx);
+    R->rax += R->rdx;
+    return 0x11DF;
 }

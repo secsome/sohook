@@ -32,3 +32,4 @@ void elf_destroy(struct elf_context* ctx);
 bool elf_read_va_string(struct elf_context* ctx, Elf64_Addr va, char* buffer);
 struct elf_section_data elf_read_section_data(struct elf_context* ctx, const char* section_name);
 void elf_read_section_name(struct elf_context* ctx, Elf64_Addr offset, char* buffer);
+void elf_read_symbol_string(struct elf_context* ctx, Elf64_Word off, char* buffer);

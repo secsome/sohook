@@ -115,8 +115,6 @@ int main(int argc, char* argv[])
         hookdata_load_elf(options.so);
     else
         hookdata_load_inj(options.metadata);
-    
-    hookdata_verify();
 
     struct debugger_context debugger = {0};
     debugger_init(&debugger, options.executable, options.so);
@@ -125,6 +123,8 @@ int main(int argc, char* argv[])
         dynamic_main(&debugger);
     else
         static_main(&debugger);
+    
+    debugger_destroy(&debugger);
 
     return 0;
 }

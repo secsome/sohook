@@ -3,16 +3,29 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/types.h>
+#include <sys/user.h>
 
 #include "elfhelper.h"
 #include "vector.h"
 
+enum
+{
+    R15, R14, R13, R12,
+    RBP, RBX, R11, R10,
+    R9, R8, RAX, RCX,
+    RDX, RSI, RDI, ORIG_RAX,
+    RIP, CS, EFLAGS, RSP,
+    SS, FS_BASE, GS_BASE, DS,
+    ES, FS, GS,
+    REGS_CNT,
+};
+
 struct breakpoint_t
 {
-    unsigned char original_byte;
-    bool enabled;
     size_t address;
     size_t target;
+    unsigned char original_byte;
+    bool enabled;
 };
 
 struct va_mapping_t
@@ -41,11 +54,10 @@ struct debugger_context
 
     // struct breakpoint_t
     struct vector_t breakpoints;  // All software breakpoints
+    bool breakpoints_sorted; // Whether breakpoints are sorted
     struct breakpoint_t bp_temp; // Temporary breakpoint
 
-    int shmid; // The shared memory id
-    void* shmptr; // The shared memory pointer
-    void* target_shmptr; // The shared memory pointer in the target process
+    void* shellcode_buffer; // The buffer for shellcode
 };
 
 void debugger_init(struct debugger_context* ctx, const char* executable, const char* library);
@@ -53,10 +65,14 @@ void debugger_destroy(struct debugger_context* ctx);
 
 void debugger_assert(struct debugger_context* ctx, bool result, const char* format, ...);
 
+void debugger_add_breakpoint(struct debugger_context* ctx, size_t address);
+struct breakpoint_t* debugger_find_breakpoint(struct debugger_context* ctx, size_t address);
 void debugger_enable_breakpoint(struct debugger_context* ctx, struct breakpoint_t* bp);
 void debugger_disable_breakpoint(struct debugger_context* ctx, struct breakpoint_t* bp);
+void debugger_disable_breakpoint_ex(struct debugger_context* ctx, struct breakpoint_t* bp, unsigned char opcode);
 
-void debugger_continue(struct debugger_context* ctx);
+int debugger_continue(struct debugger_context* ctx);
+int debugger_singlestep(struct debugger_context* ctx);
 int debugger_wait(struct debugger_context* ctx);
 void debugger_run_until(struct debugger_context* ctx, size_t address);
 
@@ -65,3 +81,11 @@ bool debugger_write_memory(struct debugger_context* ctx, size_t address, const v
 
 size_t debugger_read_register(struct debugger_context* ctx, size_t reg);
 void debugger_write_register(struct debugger_context* ctx, size_t reg, size_t value);
+struct user_regs_struct debugger_read_registers(struct debugger_context* ctx);
+void debugger_write_registers(struct debugger_context* ctx, const struct user_regs_struct* regs);
+
+size_t debugger_convert_exe_va(struct debugger_context* ctx, size_t va);
+size_t debugger_convert_lib_va(struct debugger_context* ctx, size_t va);
+size_t debugger_restore_exe_va(struct debugger_context* ctx, size_t va);
+size_t debugger_restore_lib_va(struct debugger_context* ctx, size_t va);
+void debugger_init_va_mappings(struct debugger_context* ctx, const char* module, struct vector_t* va_mappings, struct elf_context* elf);
