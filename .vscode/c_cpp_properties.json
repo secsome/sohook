@@ -6,8 +6,7 @@
                 "${workspaceFolder}/**"
             ],
             "defines": [
-                "__USE_XOPEN_EXTENDED",
-                "_GNU_SOURCE"
+                "__USE_XOPEN_EXTENDED"
             ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c17",

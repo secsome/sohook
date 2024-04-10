@@ -20,3 +20,5 @@ void hookdata_add(void* address, const char* function, size_t length);
 void hookdata_load_inj(const char *filename);
 
 void hookdata_load_elf(const char *filename);
+
+void hookdata_verify();

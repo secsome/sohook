@@ -10,6 +10,24 @@ size_t hookdata_count;
 size_t hookdata_capacity;
 struct hookdata* hookdata_list;
 
+static int hookdata_sort_compare(const void* a, const void* b)
+{
+    const struct hookdata* item_a = (const struct hookdata*)a;
+    const struct hookdata* item_b = (const struct hookdata*)b;
+    return (item_a->address > item_b->address) - (item_a->address < item_b->address);
+}
+
+void hookdata_verify()
+{
+    utils_assert(hookdata_list, "sohook: Hook data list is not initialized\n");
+    utils_assert(hookdata_count > 0, "sohook: Hook data list is empty\n");
+    
+    qsort(hookdata_list, hookdata_count, sizeof(struct hookdata), hookdata_sort_compare);
+
+    for (size_t i = 1; i < hookdata_count; ++i)
+        utils_assert(hookdata_list[i - 1].address != hookdata_list[i].address, "sohook: Duplicate hook data address\n");
+}
+
 void hookdata_clear()
 {
     if (hookdata_list)
@@ -40,6 +58,7 @@ void hookdata_add(void* address, const char* function, size_t length)
     hookdata_list[hookdata_count].address = address;
     hookdata_list[hookdata_count].length = length;
     hookdata_list[hookdata_count].function = utils_strdup(function);
+    ++hookdata_count;
 }
 
 void hookdata_load_inj(const char *filename)

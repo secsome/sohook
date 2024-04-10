@@ -12,6 +12,7 @@
 #include "hookdata.h"
 #include "dynamic.h"
 #include "static.h"
+#include "debugger.h"
 
 static void usage()
 {
@@ -92,37 +93,6 @@ static struct sohook_options parse_arguments(int argc, char* argv[])
     return options;
 }
 
-static void prepare_process(struct sohook_options const* options)
-{
-    pid_t pid = fork();
-    if (pid == 0)
-    {
-        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-
-        char buffer[1024 + 12] = "LD_PRELOAD=";
-        strcat(buffer, options->so);
-
-        char* const argv[] = {options->executable, NULL};
-        char* const envp[] = {buffer, NULL};
-        execve(options->executable, argv, envp);
-
-        utils_assert(false, "sohook: failed to execute %s with %s\n", options->executable, buffer);
-    }
-    else if (pid > 0)
-    {
-        // wait for the child process to stop itself
-        int status;
-        waitpid(pid, &status, 0);
-        
-        if (options->dynamic)
-            dynamic_main(pid, options->executable);
-        else
-            static_main(pid, options->executable);
-    }
-    else
-        utils_assert(false, "sohook: failed to fork\n");
-}
-
 int main(int argc, char* argv[])
 {
     struct sohook_options options = parse_arguments(argc, argv);
@@ -146,7 +116,15 @@ int main(int argc, char* argv[])
     else
         hookdata_load_inj(options.metadata);
     
-    prepare_process(&options);
+    hookdata_verify();
+
+    struct debugger_context debugger = {0};
+    debugger_init(&debugger, options.executable, options.so);
+
+    if (options.dynamic)
+        dynamic_main(&debugger);
+    else
+        static_main(&debugger);
 
     return 0;
 }

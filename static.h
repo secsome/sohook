@@ -1,8 +1,5 @@
 #pragma once
 
-#include <stdbool.h>
-#include <sys/types.h>
+#include "debugger.h"
 
-void static_assert(bool result, const char* format, ...);
-
-void static_main(pid_t pid, const char* executable);
+void static_main(struct debugger_context* ctx);

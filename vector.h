@@ -11,6 +11,7 @@ struct vector_t
 };
 
 void _vector_init(struct vector_t* this, size_t item_size);
+void vector_destroy(struct vector_t* this);
 void vector_emplace(struct vector_t* this, void* item);
 void vector_clear(struct vector_t* this);
 size_t vector_size(struct vector_t* this);

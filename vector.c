@@ -13,6 +13,17 @@ void _vector_init(struct vector_t* this, size_t item_size)
     this->final = (char*)this->begin + VECTOR_INITIAL_CAPACITY * item_size;
 }
 
+void vector_destroy(struct vector_t* this)
+{
+    if (this->begin != NULL)
+    {
+        free(this->begin);
+        this->begin = NULL;
+    }
+    this->end = NULL;
+    this->final = NULL;
+}
+
 void vector_emplace(struct vector_t* this, void* item)
 {
     if ((char*)this->end == (char*)this->final)
@@ -29,10 +40,7 @@ void vector_emplace(struct vector_t* this, void* item)
 
 void vector_clear(struct vector_t* this)
 {
-    free(this->begin);
-    this->begin = NULL;
-    this->end = NULL;
-    this->final = NULL;
+    this->end = this->begin;
 }
 
 size_t vector_size(struct vector_t* this)
@@ -44,5 +52,3 @@ void* vector_at(struct vector_t* this, size_t index)
 {
     return (char*)this->begin + index * this->item_size;
 }
-
-
