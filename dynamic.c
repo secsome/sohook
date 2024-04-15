@@ -49,13 +49,13 @@ void dynamic_main(struct debugger_context* ctx)
             unsigned char nop = 0x90;
             debugger_assert(ctx,
                 debugger_write_memory(ctx, address, &nop, sizeof(nop)),
-                "sohook: Failed to write nop to hook address"
+                "sohook: Failed to write nop to hook address\n"
             );
 
             // Redirect to the shellcode
             struct user_regs_struct tmp_regs = regs;
             tmp_regs.rip = (size_t)ctx->shellcode_buffer + 0x800; // the shellcode is placed at 0x800
-            tmp_regs.rdi = (size_t)ctx->shellcode_buffer; // store the address of the registers data in rax
+            tmp_regs.rdi = (size_t)ctx->shellcode_buffer; // store the address of the registers data in rdi
             tmp_regs.rax = (size_t)dynamic_get_target_address(ctx, address); // address to the function in dynamic library
             debugger_write_registers(ctx, &tmp_regs);
 
@@ -64,16 +64,42 @@ void dynamic_main(struct debugger_context* ctx)
             
             debugger_assert(ctx,
                 debugger_write_memory(ctx, (size_t)ctx->shellcode_buffer + 0x800, jmp_shellcode, sizeof(jmp_shellcode)),
-                "sohook: Failed to write shellcode"
+                "sohook: Failed to write shellcode\n"
             );
             debugger_assert(ctx,
                 debugger_write_memory(ctx, (size_t)ctx->shellcode_buffer, &regs, sizeof(struct user_regs_struct)),
-                "sohook: Failed to write registers"
+                "sohook: Failed to write registers\n"
             );
 
-            status = debugger_continue(ctx);
-            debugger_assert(ctx, WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP, "sohook: Unexpected signal %d\n", WSTOPSIG(status));
-                
+            // Run the shellcode
+            const size_t except_rip = (size_t)ctx->shellcode_buffer + 0x800 + 3;
+            // During our hook's execution, we may encounter a call to a function in the target
+            // We need to handle this case by redirecting the return address to the target function
+            while (!debugger_run_until(ctx, except_rip, &status))
+            {
+                size_t rip = debugger_read_register(ctx, RIP);
+                if (rip == except_rip)
+                    break;
+
+                // Try to handle the function call signal
+                if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGSEGV)
+                {
+                    struct funcdata* data = funcdata_find((void*)rip);
+                    if (data != NULL)
+                    {
+                        // Set the return value to the address of the function
+                        size_t real_rip = debugger_convert_exe_va(ctx, rip);
+                        debugger_write_register(ctx, RIP, real_rip);
+                        status = debugger_continue(ctx);
+                    }
+                    else
+                    {
+                        // The signal is not caused by a function call, panic
+                        debugger_assert(ctx, false, "sohook: Unexpected signal %d at %p\n", WSTOPSIG(status), rip);
+                    }
+                }
+            }
+
             // Set current instruction to nop so that we can continue
             memset(jmp_shellcode, 0x90, sizeof(jmp_shellcode));
             debugger_assert(ctx,

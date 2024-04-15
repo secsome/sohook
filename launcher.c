@@ -112,9 +112,15 @@ int main(int argc, char* argv[])
         options.embedded = true;
 
     if (options.embedded)
+    {
         hookdata_load_elf(options.so);
+        funcdata_load_elf(options.so);
+    }
     else
+    {
         hookdata_load_inj(options.metadata);
+        funcdata_load_inj(options.metadata);
+    }
 
     struct debugger_context debugger = {0};
     debugger_init(&debugger, options.executable, options.so);
@@ -125,6 +131,9 @@ int main(int argc, char* argv[])
         static_main(&debugger);
     
     debugger_destroy(&debugger);
+
+    hookdata_clear();
+    funcdata_clear();
 
     return 0;
 }

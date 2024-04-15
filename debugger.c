@@ -9,6 +9,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdint.h>
+#include <errno.h>
 #include <limits.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -61,7 +62,7 @@ void debugger_init(struct debugger_context* ctx, const char* executable, const c
 
     // Get entrypoint real va and run to the entrypoint
     ctx->entrypoint = debugger_convert_exe_va(ctx, ctx->elf_exe.header.e_entry);
-    debugger_run_until(ctx, ctx->entrypoint);
+    debugger_assert(ctx, debugger_run_until(ctx, ctx->entrypoint, NULL), "sohook: failed to run to entrypoint\n");
 
     // Now the library is loaded, initialize its va mappings
     debugger_init_va_mappings(ctx, library, &ctx->va_mappings_lib, &ctx->elf_lib);
@@ -69,6 +70,7 @@ void debugger_init(struct debugger_context* ctx, const char* executable, const c
     // Now get all the real va of the functions
     hookdata_convert_addresses(&ctx->elf_lib);
     hookdata_verify();
+    funcdata_verify();
 
     unsigned char shellcode[] = 
     {
@@ -94,7 +96,7 @@ void debugger_init(struct debugger_context* ctx, const char* executable, const c
     debugger_assert(ctx, debugger_write_memory(ctx, ctx->entrypoint, original_entrypoint, sizeof(shellcode)), "sohook: failed to restore entrypoint\n");
     debugger_write_register(ctx, RIP, ctx->entrypoint);
 
-    debugger_run_until(ctx, ctx->entrypoint);
+    debugger_assert(ctx, debugger_run_until(ctx, ctx->entrypoint, NULL), "sohook: failed to run to entrypoint\n");
 }
 
 void debugger_destroy(struct debugger_context* ctx)
@@ -123,6 +125,9 @@ void debugger_assert(struct debugger_context* ctx, bool result, const char* form
 {
     if (!result)
     {
+        if (errno != 0)
+            perror("debugger_assert");
+
         ptrace(PTRACE_KILL, ctx->pid, NULL, NULL);
         va_list args;
         va_start(args, format);
@@ -210,12 +215,26 @@ int debugger_wait(struct debugger_context* ctx)
     return status;
 }
 
-void debugger_run_until(struct debugger_context* ctx, size_t address)
+bool debugger_run_until(struct debugger_context* ctx, size_t address, int* status)
 {
     ctx->bp_temp.address = address;
     debugger_enable_breakpoint(ctx, &ctx->bp_temp);
-    debugger_continue(ctx);
+    int stat = debugger_continue(ctx);
     debugger_disable_breakpoint(ctx, &ctx->bp_temp);
+    bool result = true;
+
+    // Check if the breakpoint is hit at the address, if so, restore the RIP
+    // Otherwise, return false 
+    size_t current_rip = debugger_read_register(ctx, RIP);
+    if (current_rip == address + 1 && WIFSTOPPED(stat) && WSTOPSIG(stat) == SIGTRAP)
+        debugger_write_register(ctx, RIP, address);
+    else
+        result = false;
+    
+    if (status != NULL)
+        *status = stat;
+
+    return result;
 }
 
 bool debugger_read_memory(struct debugger_context* ctx, size_t address, void* buffer, size_t size)
@@ -349,6 +368,7 @@ void debugger_init_va_mappings(struct debugger_context* ctx, const char* module,
 
     char* realpath_ptr = realpath(module, NULL);
     char line_buffer[4096] = {0};
+    char last_property[5] = "----";
     while (fgets(line_buffer, sizeof(line_buffer), maps) != NULL)
     {
         // Not mine
@@ -357,7 +377,17 @@ void debugger_init_va_mappings(struct debugger_context* ctx, const char* module,
         
         // Collect the memory map of the target process
         struct va_mapping_t mapping_item;
-        debugger_assert(ctx, sscanf(line_buffer, "%p-%p", &mapping_item.real_start, &mapping_item.real_end) == 2, "sohook: failed to parse memory map\n");
+        char property[5] = "----";
+        debugger_assert(ctx, 
+            sscanf(line_buffer, "%p-%p %4s", &mapping_item.real_start, &mapping_item.real_end, property) == 3, 
+            "sohook: failed to parse memory map\n");
+
+        // Duplicate mapping caused by relocation, ignore it
+        if (!memcmp(last_property, property, 4) && !memcmp(property, "r--p", 4))
+            continue;
+
+        memcpy(last_property, property, 4);
+
         vector_emplace(va_mappings, &mapping_item);
     }
     fclose(maps);
@@ -384,4 +414,3 @@ void debugger_init_va_mappings(struct debugger_context* ctx, const char* module,
         mapping->elf_end = header.p_vaddr + header.p_memsz;
     }
 }
-

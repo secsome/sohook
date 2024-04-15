@@ -3,6 +3,8 @@ CFLAGS = -Wall -Wextra
 
 TARGET_DEBUG = sohookd
 TARGET_RELEASE = sohook
+TEST_SO = test.so
+TEST_SRC = test.c
 
 SRCS = launcher.c hookdata.c elfhelper.c utils.c dynamic.c static.c vector.c debugger.c
 OBJS = $(SRCS:.c=.o)
@@ -27,6 +29,9 @@ $(TARGET_RELEASE): $(OBJS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -O2 -c $< -o $@
+
+test: $(TEST_SRC)
+	$(CC) $(TEST_SRC) -shared -fPIC -o $(TEST_SO)
 
 clean:
 	rm -f $(TARGET_DEBUG) $(TARGET_RELEASE) $(OBJS) $(DBGOBJS)

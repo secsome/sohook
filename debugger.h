@@ -74,7 +74,7 @@ void debugger_disable_breakpoint_ex(struct debugger_context* ctx, struct breakpo
 int debugger_continue(struct debugger_context* ctx);
 int debugger_singlestep(struct debugger_context* ctx);
 int debugger_wait(struct debugger_context* ctx);
-void debugger_run_until(struct debugger_context* ctx, size_t address);
+bool debugger_run_until(struct debugger_context* ctx, size_t address, int* status);
 
 bool debugger_read_memory(struct debugger_context* ctx, size_t address, void* buffer, size_t size);
 bool debugger_write_memory(struct debugger_context* ctx, size_t address, const void* buffer, size_t size);
