@@ -9,8 +9,5 @@
 void static_main(struct debugger_context* ctx)
 {
     // TODO: implement the static hooking
-    
-    
-    // wait the child process to finish
-    debugger_continue(ctx);
+    debugger_assert(ctx, false, "Not implemented yet\n");
 }
