@@ -5,7 +5,9 @@
 #include <sys/user.h>
 
 #ifdef __cplusplus
-extern "C" {
+#define EXTERNC extern "C"
+#else
+#define EXTERNC
 #endif
 
 union register_item
@@ -62,9 +64,9 @@ struct hookdecl_t
 #define __STR(x) #x
 
 #define DEFINE_HOOK(addr, name, size) \
-size_t _func_ ## name ## _(struct REGISTERS* R); \
+EXTERNC size_t _func_ ## name ## _(struct REGISTERS* R); \
 __attribute__((section(".sohook"))) struct hookdecl_t _ ## name ## _hookdecls_ = { (void*)addr, size, __STR(_func_ ## name ## _) }; \
-size_t _func_ ## name ## _(struct REGISTERS* R)
+EXTERNC size_t _func_ ## name ## _(struct REGISTERS* R)
 
 struct funcdecl_t
 {
@@ -79,7 +81,3 @@ return_type (*name)(__VA_ARGS__) = (return_type(*)(__VA_ARGS__))addr
 #define DEFINE_FUNC_EX(addr, name, return_type, call_conv, ...) \
 __attribute__((section(".sofunc"))) struct funcdecl_t _ ## name ## _funcdecls_ = { (void*)addr, __STR(name) }; \
 return_type (call_conv *name)(__VA_ARGS__) = (return_type(call_conv *)(__VA_ARGS__))addr
-
-#ifdef __cplusplus
-}
-#endif
